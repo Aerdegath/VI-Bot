@@ -53,42 +53,65 @@ void setup()
 
 void loop()
 {
- readUltrasonicSensor1();
-// readUltrasonicSensor2();
-// readUltrasonicSensor3();
-// readUltrasonicSensor4();
- driveForward();
+   int count = 0;
+
+   readUltrasonicSensor1();
+   driveForward();
  
- while (distance1 < 10)
- {
-     readUltrasonicSensor1();
- }
+    while (distance1 < 10)
+    {
+       readUltrasonicSensor1();
+    }
 
-driveStop();
-delay(250);
+   driveStop();
+   delay(250);
 
-driveRight();
-delay(500);
+   readUltrasonicSensor2();
+   driveLeft();
 
-driveStop();
-delay(250);
+   while (distance2 < 10 && count < 250)
+   {
+      readUltrasonicSensor2();
+      count++;
+   }
 
-driveReverse();
-readUltrasonicSensor3();
+   if (distance2 > 10)
+   {
+     driveStop();
+     delay(20000);
+   }
+
+   driveStop();
+   delay(250);
+
+   driveReverse();
+   readUltrasonicSensor3();
  
- while (distance3 < 10)
- {
-     readUltrasonicSensor3();
- }
+   while (distance3 < 10)
+   {
+      readUltrasonicSensor3();
+   }
 
-driveStop();
-delay(250);
+   driveStop();
+   delay(250);
 
-driveRight();
-delay(500);
+   readUltrasonicSensor2();
+   driveLeft();
 
-driveStop();
-delay(250);
+   while (distance2 < 10 && count < 250)
+   {
+      readUltrasonicSensor2();
+      count++;
+   }
+
+   if (distance2 > 10)
+   {
+     driveStop();
+     delay(20000);
+   }
+
+   driveStop();
+   delay(250);
 }
 
 void readUltrasonicSensor1()
