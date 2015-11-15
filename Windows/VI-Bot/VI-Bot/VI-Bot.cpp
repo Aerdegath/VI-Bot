@@ -14,6 +14,9 @@
 #define COM_OPT6 COM_BASE+6
 #define COM_OPT7 COM_BASE+7
 
+#define BTN_RUN  1001
+#define BTN_LOAD 1002
+
 
 #using <System.dll>
 
@@ -21,6 +24,9 @@ using namespace System;
 using namespace System::IO::Ports;
 using namespace System::ComponentModel;
 
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 ref class ManagedGlobals {
 public:
@@ -96,7 +102,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 	wcex.hInstance		= hInstance;
 	wcex.hIcon			= LoadIcon(hInstance, MAKEINTRESOURCE(IDI_VIBOT));
 	wcex.hCursor		= LoadCursor(NULL, IDC_ARROW);
-	wcex.hbrBackground	= (HBRUSH)(COLOR_WINDOW+1);
+	wcex.hbrBackground	= (HBRUSH)(COLOR_WINDOW);
 	wcex.lpszMenuName	= MAKEINTRESOURCE(IDC_VIBOT);
 	wcex.lpszClassName	= szWindowClass;
 	wcex.hIconSm		= LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -124,7 +130,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    hInst = hInstance; // Store instance handle in our global variable
 
    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
+      CW_USEDEFAULT, 0, 400, 300, NULL, NULL, hInstance, NULL);
 
    if (!hWnd)
    {
@@ -150,6 +156,33 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	   AppendMenu(hMenu, MF_UNCHECKED, COM_OPT1+count, mcontext.marshal_as<LPCWSTR>(port));
 	   count++;
    }
+
+   //build controls
+    CreateWindowEx(NULL,
+	   L"BUTTON",
+	   L"Start",
+	   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+	   30,
+	   120,
+	   100,
+	   24,
+	   hWnd,
+	   (HMENU)BTN_RUN,
+	   GetModuleHandle(NULL),
+	   NULL);
+
+	CreateWindowEx(NULL,
+	   L"BUTTON",
+	   L"Load",
+	   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+	   150,
+	   120,
+	   100,
+	   24,
+	   hWnd,
+	   (HMENU)BTN_RUN,
+	   GetModuleHandle(NULL),
+	   NULL);
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
