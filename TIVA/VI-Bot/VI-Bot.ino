@@ -14,6 +14,8 @@
 #define trigPin4 PD_1 // Right Trigger
 #define LED RED_LED // Onboard LED
 #include <Servo.h>
+#include <Ethernet.h>
+#include <SPI.h>
 
 //Centerpoints for each servo
 #define FRONT_RIGHT_BASE 1490
@@ -64,8 +66,7 @@ void setup()
 }
 
 void loop()
-{
-  /*
+{ 
     while (i==0 && buttonState == HIGH) {
     driveStop();
     buttonState = digitalRead(buttonPin);
@@ -143,7 +144,7 @@ void loop()
    }
    driveStop();
    delay(250); 
-   */
+   
 }
 
 void readUltrasonicSensor1()
