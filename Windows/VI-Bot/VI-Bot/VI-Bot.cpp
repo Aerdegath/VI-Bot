@@ -1,32 +1,9 @@
 // VI-Bot.cpp : Defines the entry point for the application.
 //
-
 #include "stdafx.h"
 #include "VI-Bot.h"
 
 #define MAX_LOADSTRING 100
-#define COM_BASE 9000
-#define COM_OPT1 COM_BASE+1
-#define COM_OPT2 COM_BASE+2
-#define COM_OPT3 COM_BASE+3
-#define COM_OPT4 COM_BASE+4
-#define COM_OPT5 COM_BASE+5
-#define COM_OPT6 COM_BASE+6
-#define COM_OPT7 COM_BASE+7
-
-#define BTN_RUN  1001
-#define BTN_LOAD 1002
-
-
-#using <System.dll>
-
-using namespace System;
-using namespace System::IO::Ports;
-using namespace System::ComponentModel;
-
-#pragma comment(linker,"\"/manifestdependency:type='win32' \
-name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
-processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 ref class ManagedGlobals {
 public:
@@ -37,6 +14,10 @@ public:
 HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
+HWND listView;
+vector<double> holeList;
+int serialIdx = 0;
+CLEyeCameraInstance eyeCam;
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -52,9 +33,13 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
 
- 	// TODO: Place code here.
+	INITCOMMONCONTROLSEX iccx;
 	MSG msg;
 	HACCEL hAccelTable;
+
+	iccx.dwSize = sizeof(INITCOMMONCONTROLSEX);
+	iccx.dwICC = ICC_LISTVIEW_CLASSES;
+	InitCommonControlsEx(&iccx);
 
 	// Initialize global strings
 	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -126,11 +111,13 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    HMENU hMenu;
    msclr::interop::marshal_context mcontext;
    int count = 0;
+   LVCOLUMN lvc;
+   WCHAR colText[256];
 
    hInst = hInstance; // Store instance handle in our global variable
 
    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, 400, 300, NULL, NULL, hInstance, NULL);
+      CW_USEDEFAULT, 0, 1000, 500, NULL, NULL, hInstance, NULL);
 
    if (!hWnd)
    {
@@ -157,6 +144,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	   count++;
    }
 
+   //select the first by default
+   CheckMenuItem(hMenu, COM_OPT1, MF_UNCHECKED);
+
    //build controls
     CreateWindowEx(NULL,
 	   L"BUTTON",
@@ -180,9 +170,38 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	   100,
 	   24,
 	   hWnd,
-	   (HMENU)BTN_RUN,
+	   (HMENU)BTN_LOAD,
 	   GetModuleHandle(NULL),
 	   NULL);
+
+	listView = CreateWindowEx(NULL,
+		WC_LISTVIEW,
+		L"",
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL| ES_AUTOVSCROLL,
+		300,
+		25,
+		550,
+		250,
+		hWnd,
+		(HMENU)CSV_LIST,
+		GetModuleHandle(NULL),
+		NULL);
+
+	lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM | LVCFMT_CENTER | LVCFMT_FIXED_WIDTH;
+	lvc.cx = 100;
+	 
+	for (int i = 0; i < CSV_COLS; i++)
+	{
+		lvc.iSubItem = i;
+		lvc.pszText = colText;
+		
+		if (i > 0)
+			lvc.cx = 150;
+
+		LoadString(hInst, IDS_CSVCOLS_1 + i, colText, sizeof(colText) / sizeof(colText[0]));
+
+		ListView_InsertColumn(listView, i, &lvc);
+	}
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -208,7 +227,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	MENUITEMINFO mInfo;
 	HMENU hMenu = GetMenu(hWnd);
 	String^ name;
-	int serialIdx = 0;
+	OPENFILENAME fileStruct;
+	wchar_t	filename[MAX_FILENAME_CHARS];
 
 	switch (message)
 	{
@@ -242,6 +262,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			CheckMenuItem(hMenu, wmId, MF_CHECKED);
 			break;
+		case BTN_LOAD:
+			memset(&(fileStruct), 0, sizeof(fileStruct));
+			fileStruct.lStructSize = sizeof(fileStruct);
+			fileStruct.lpstrFile = filename;
+			filename[0] = 0;
+			fileStruct.nMaxFile = MAX_FILENAME_CHARS;
+			fileStruct.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST;
+			fileStruct.lpstrFilter = L"CSV files\0*.csv\0All files\0*.*\0\0";
+
+			if (!(GetOpenFileName(&fileStruct)) || filename[0] == '\0')
+				break;		/* user cancelled load */
+
+			if (loadCSV(filename, listView, holeList) != 0)
+			{
+				MessageBox(hWnd, L"Error loading selected .csv file.", L"File Error", MB_ICONERROR);
+			}
+
+			break;
+		case BTN_RUN:
+		{
+			if (ManagedGlobals::serialPorts->Length == 0)
+			{
+				MessageBox(hWnd, L"No serial connection to robot. Check your cables.", L"COM Error", MB_ICONERROR);
+				break;
+			}
+			//open the selected COM port; first by default
+			SerialPort comPort((String^)ManagedGlobals::serialPorts->GetValue(serialIdx), 9600);
+			break;
+		}
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 		}
