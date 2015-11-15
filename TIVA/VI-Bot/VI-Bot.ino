@@ -15,10 +15,18 @@
 #define LED RED_LED // Onboard LED
 #include <Servo.h>
 
+//Centerpoints for each servo
+#define FRONT_RIGHT_BASE 1490
+#define FRONT_LEFT_BASE  1484
+#define BACK_LEFT_BASE 1482
+#define BACK_RIGHT_BASE 1480
+
 int maximumRange = 200; //Maximum range needed
 int minimumRange = 0;  // Minimum range needed
+int i=0;
 long duration, distance1, distance2, distance3, distance4; // Duration to Calculate Distance
-
+const int buttonPin = PUSH2; //Push Button
+int buttonState = 0; // Initial Button State
 
 Servo frontleftMotor;
 Servo frontrightMotor;
@@ -29,9 +37,11 @@ void readUltrasonicSensor1();
 void readUltrasonicSensor2();
 void readUltrasonicSensor3();
 void readUltrasonicSensor4();
-void stateMachine();
+void driveLeftBottom();
 void driveForward();
 void driveStop();
+void forwardSlow();
+void reverseSlow();
 
 void setup()
 {
@@ -49,69 +59,91 @@ void setup()
     frontleftMotor.attach(PF_3);
     frontrightMotor.attach(PA_6);
     backrightMotor.attach(PA_7);
+    pinMode(buttonPin, INPUT_PULLUP);
+    buttonState = digitalRead(buttonPin);
 }
 
 void loop()
 {
+  /*
+    while (i==0 && buttonState == HIGH) {
+    driveStop();
+    buttonState = digitalRead(buttonPin);
+  }
+  i=1;
+  
    int count = 0;
 
    readUltrasonicSensor1();
-   driveForward();
+   readUltrasonicSensor2();
+   forwardSlow();
  
     while (distance1 < 10)
     {
        readUltrasonicSensor1();
+       readUltrasonicSensor2();
     }
-
+    
    driveStop();
-   delay(250);
-
+   delay(10);
+   driveReverse();
+   delay(1000);
+   driveStop();
+   delay(50);
    readUltrasonicSensor2();
-   driveLeft();
+   driveLeftTop();
+   delay(700);
+   forwardSlow();
+   delay(300);
 
-   while (distance2 < 10 && count < 250)
+   while (distance2 < 10 && count < 50)
    {
       readUltrasonicSensor2();
       count++;
    }
 
-   if (distance2 > 10)
-   {
-     driveStop();
-     delay(20000);
-   }
-
-   driveStop();
-   delay(250);
-
-   driveReverse();
+   reverseSlow();
+   
+   readUltrasonicSensor2();
    readUltrasonicSensor3();
  
    while (distance3 < 10)
    {
       readUltrasonicSensor3();
+      readUltrasonicSensor2();
    }
 
    driveStop();
-   delay(250);
-
+   delay(10);
+   driveForward();
+   delay(1250);
    readUltrasonicSensor2();
-   driveLeft();
+   driveLeftBottom();
+   delay(700);
+   reverseSlow();
+   delay(300);
+   
+   count = 0;
 
-   while (distance2 < 10 && count < 250)
+   while (distance2 < 10 && count < 50)
    {
       readUltrasonicSensor2();
       count++;
    }
 
-   if (distance2 > 10)
+   if (distance2 > 7)
    {
      driveStop();
-     delay(20000);
+     delay(100);
+     driveRight();
+     delay(1000);
+     driveStop();
+     buttonState = HIGH;
+     i=0;
    }
-
    driveStop();
-   delay(250);
+   delay(250); 
+   */
 }
 
 void readUltrasonicSensor1()
@@ -131,7 +163,7 @@ void readUltrasonicSensor1()
  distance1 = duration/58.2; 
  
  //Delay 20ms before next reading.
- delay(2);   
+ delay(10);   
 }
 
 void readUltrasonicSensor2()
@@ -151,7 +183,7 @@ void readUltrasonicSensor2()
  distance2 = duration/58.2; 
  
  //Delay 20ms before next reading.
- delay(2);   
+ delay(10);   
 }
 
 void readUltrasonicSensor3()
@@ -170,7 +202,7 @@ void readUltrasonicSensor3()
  //Calculate the distance (in cm) based on the speed of sound.
  distance3 = duration/58.2; 
  //Delay 20ms before next reading.
- delay(2);   
+ delay(10);   
 }
 
 void readUltrasonicSensor4()
@@ -190,50 +222,69 @@ void readUltrasonicSensor4()
  distance4 = duration/58.2; 
  
  //Delay 20ms before next reading.
- delay(2);   
+ delay(10);   
 }
 
 void driveForward()
 {
-   frontrightMotor.write(88);
-   frontleftMotor.write(94);
-   backleftMotor.write(93);
-   backrightMotor.write(87);
+   frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-37);
+   frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+17);
+   backleftMotor.writeMicroseconds(BACK_LEFT_BASE+20);
+   backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-40);
 }
 
 void driveStop()
 {
-   frontrightMotor.write(91);
-   frontleftMotor.write(91);
-   backleftMotor.write(91);
-   backrightMotor.write(91);
+   frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-1);
+   frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-1);
+   backleftMotor.writeMicroseconds(BACK_LEFT_BASE);
+   backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-4);
 }
 
 void driveReverse()
 {
-  frontrightMotor.write(94);
-  frontleftMotor.write(88);
-  backleftMotor.write(87);
-  backrightMotor.write(94);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+30);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-40);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-42);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+30);
 }
 
-void driveLeft()
+void driveLeftBottom()
 {
-  frontrightMotor.write(89);
-  frontleftMotor.write(88);
-  backleftMotor.write(93);
-  backrightMotor.write(93);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-28);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+18);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+15);
+}
+
+void driveLeftTop()
+{
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-23);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-40);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+11);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+27);
 }
 
 void driveRight()
 {
-  frontrightMotor.write(94);
-  frontleftMotor.write(94);
-  backleftMotor.write(87);
-  backrightMotor.write(87);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+32);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+31);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-38);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-37);
 }
 
-void stateMachine()
+void forwardSlow()
 {
+   frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-30);
+   frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+13);
+   backleftMotor.writeMicroseconds(BACK_LEFT_BASE+12);
+   backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-29);
+}
 
-  }
+void reverseSlow()
+{
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+18);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-30);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+17);
+}
