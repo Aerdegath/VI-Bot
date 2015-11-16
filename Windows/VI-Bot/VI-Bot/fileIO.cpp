@@ -4,12 +4,13 @@
 using namespace cv;
 using namespace cv::ocl;
 
-int loadCSV(LPWSTR filename, HWND listView, vector<double> &pointList)
+int loadCSV(LPWSTR filename, HWND listView, vector<holeInfo> &pointList)
 {
 	wifstream csvFile;
 	LVITEM nextItem = { 0 };
 	int fileIdx = 0, rowIdx = 0;
 	wchar_t temp[256];
+	holeInfo hiStruct;
 
 	csvFile.open(filename);
 
@@ -47,13 +48,22 @@ int loadCSV(LPWSTR filename, HWND listView, vector<double> &pointList)
 
 		ListView_SetItemText(listView, rowIdx, (fileIdx % CSV_COLS), temp);
 
-		if ((fileIdx % CSV_COLS) != 0)
+		if ((fileIdx % CSV_COLS) == 1)
 		{
-			pointList.push_back(wcstod(temp, NULL));
+			hiStruct.diameter = wcstod(temp, NULL);
+		}
+		else if ((fileIdx % CSV_COLS) == 2)
+		{
+			hiStruct.xPos = wcstod(temp, NULL);
+		}
+		else if ((fileIdx % CSV_COLS) == 3)
+		{
+			hiStruct.yPos = wcstod(temp, NULL);
 		}
 
 		if ((fileIdx % CSV_COLS) == CSV_COLS - 1)
 		{
+			pointList.push_back(hiStruct);
 			rowIdx++;
 		}
 			

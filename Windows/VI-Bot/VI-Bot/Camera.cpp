@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "VI-Bot.h"
 
-CLEyeCameraInstance StartCam(int FrameRate, CLEyeCameraResolution Resolution){
-
+CLEyeCameraInstance StartCam(int FrameRate, CLEyeCameraResolution Resolution)
+{
 	CLEyeCameraInstance EyeCamera;
 
 	//Check for presence of EYE
@@ -35,6 +35,7 @@ CLEyeCameraInstance StartCam(int FrameRate, CLEyeCameraResolution Resolution){
 	return EyeCamera;
 }
 
-void StopCam(CLEyeCameraInstance & EyeCamera){
+void StopCam(CLEyeCameraInstance & EyeCamera)
+{
 	CLEyeCameraStop(EyeCamera);
 }

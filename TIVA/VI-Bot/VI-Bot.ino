@@ -14,7 +14,6 @@
 #define trigPin4 PD_1 // Right Trigger
 #define LED RED_LED // Onboard LED
 #include <Servo.h>
-#include <Ethernet.h>
 #include <SPI.h>
 
 //Centerpoints for each servo
@@ -67,7 +66,8 @@ void setup()
 
 void loop()
 { 
-    while (i==0 && buttonState == HIGH) {
+  Serial.write("Hello?");
+  /*  while (i==0 && buttonState == HIGH) {
     driveStop();
     buttonState = digitalRead(buttonPin);
   }
@@ -143,7 +143,7 @@ void loop()
      i=0;
    }
    driveStop();
-   delay(250); 
+   delay(250); */
    
 }
 

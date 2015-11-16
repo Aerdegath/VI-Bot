@@ -15,7 +15,7 @@ HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 HWND listView;
-vector<double> holeList;
+vector<holeInfo> holeList;
 int serialIdx = 0;
 CLEyeCameraInstance eyeCam;
 
@@ -287,8 +287,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				MessageBox(hWnd, L"No serial connection to robot. Check your cables.", L"COM Error", MB_ICONERROR);
 				break;
 			}
-			//open the selected COM port; first by default
-			SerialPort comPort((String^)ManagedGlobals::serialPorts->GetValue(serialIdx), 9600);
+
+			int ret = traversePart((String^)ManagedGlobals::serialPorts->GetValue(serialIdx), holeList);
+		    
+			if (ret == -1)
+			{
+				MessageBox(hWnd, L"Failed to open serial connection!", L"COM Error", MB_ICONERROR);
+			}
 			break;
 		}
 		default:
