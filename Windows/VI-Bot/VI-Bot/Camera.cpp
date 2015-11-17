@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "VI-Bot.h"
 
+using namespace cv;
+
 CLEyeCameraInstance StartCam(int FrameRate, CLEyeCameraResolution Resolution)
 {
 	CLEyeCameraInstance EyeCamera;
@@ -38,4 +40,5 @@ CLEyeCameraInstance StartCam(int FrameRate, CLEyeCameraResolution Resolution)
 void StopCam(CLEyeCameraInstance & EyeCamera)
 {
 	CLEyeCameraStop(EyeCamera);
+	CLEyeDestroyCamera(EyeCamera);
 }

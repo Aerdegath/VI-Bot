@@ -12,15 +12,22 @@
 #define trigPin3 PD_2 // Back Trigger
 #define echoPin4 PC_4 // Right Echo
 #define trigPin4 PD_1 // Right Trigger
-#define LED RED_LED // Onboard LED
+#define LED RED_LED   // Onboard LED
 #include <Servo.h>
-#include <SPI.h>
-
-//Centerpoints for each servo
+#include <math.h>
+#include <Stabilize.h>
 #define FRONT_RIGHT_BASE 1490
 #define FRONT_LEFT_BASE  1484
 #define BACK_LEFT_BASE 1482
 #define BACK_RIGHT_BASE 1480
+
+#define Kp_X 0.5
+#define Ki_X 0.0
+#define Kd_X 0.0
+
+#define Kp_Y 0.5
+#define Ki_Y 0.0
+#define Kd_Y 0.0
 
 int maximumRange = 200; //Maximum range needed
 int minimumRange = 0;  // Minimum range needed
@@ -28,7 +35,12 @@ int i=0;
 long duration, distance1, distance2, distance3, distance4; // Duration to Calculate Distance
 const int buttonPin = PUSH2; //Push Button
 int buttonState = 0; // Initial Button State
-
+double Correction1, Correction2, Correction3, Correction4;
+double xError, yError;
+float X, Y;
+int globalLoopCounter;
+long startTime, endTime;
+char xyPos[15];
 Servo frontleftMotor;
 Servo frontrightMotor;
 Servo backrightMotor;
@@ -38,11 +50,12 @@ void readUltrasonicSensor1();
 void readUltrasonicSensor2();
 void readUltrasonicSensor3();
 void readUltrasonicSensor4();
-void driveLeftBottom();
-void driveForward();
 void driveStop();
-void forwardSlow();
-void reverseSlow();
+
+Stabilize xStabilize(Kp_X, Ki_X, Kd_X);
+Stabilize yStabilize(Kp_Y, Ki_Y, Kd_Y);
+
+
 
 void setup()
 {
@@ -62,12 +75,15 @@ void setup()
     backrightMotor.attach(PA_7);
     pinMode(buttonPin, INPUT_PULLUP);
     buttonState = digitalRead(buttonPin);
+    endTime = micros();
 }
 
 void loop()
 { 
-  Serial.write("Hello?");
-  /*  while (i==0 && buttonState == HIGH) {
+  startTime=micros();
+  xyPID();
+  endTime=micros();
+  while (i==0 && buttonState == HIGH) {
     driveStop();
     buttonState = digitalRead(buttonPin);
   }
@@ -77,12 +93,15 @@ void loop()
 
    readUltrasonicSensor1();
    readUltrasonicSensor2();
-   forwardSlow();
+   driveForward();
  
     while (distance1 < 10)
     {
        readUltrasonicSensor1();
        readUltrasonicSensor2();
+       xyPID();
+       driveForward();
+       ResetCorrection();
     }
     
    driveStop();
@@ -94,16 +113,19 @@ void loop()
    readUltrasonicSensor2();
    driveLeftTop();
    delay(700);
-   forwardSlow();
+   driveForward();
    delay(300);
 
    while (distance2 < 10 && count < 50)
    {
       readUltrasonicSensor2();
       count++;
+      xyPID();
+      driveForward();
+      ResetCorrection();
    }
 
-   reverseSlow();
+   driveReverse();
    
    readUltrasonicSensor2();
    readUltrasonicSensor3();
@@ -112,17 +134,20 @@ void loop()
    {
       readUltrasonicSensor3();
       readUltrasonicSensor2();
-   }
+      xyPID();
+      driveReverse(); 
+      ResetCorrection();
+    }
 
-   driveStop();
+   /*driveStop();
    delay(10);
    driveForward();
    delay(1250);
    readUltrasonicSensor2();
    driveLeftBottom();
    delay(700);
-   reverseSlow();
-   delay(300);
+   driveReverse();
+   delay(300); */
    
    count = 0;
 
@@ -130,9 +155,11 @@ void loop()
    {
       readUltrasonicSensor2();
       count++;
+      xyPID();
+   
    }
 
-   if (distance2 > 7)
+ /*  if (distance2 > 7)
    {
      driveStop();
      delay(100);
@@ -141,9 +168,9 @@ void loop()
      driveStop();
      buttonState = HIGH;
      i=0;
-   }
+   } */
    driveStop();
-   delay(250); */
+   delay(250); 
    
 }
 
@@ -225,14 +252,7 @@ void readUltrasonicSensor4()
  //Delay 20ms before next reading.
  delay(10);   
 }
-
-void driveForward()
-{
-   frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-37);
-   frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+17);
-   backleftMotor.writeMicroseconds(BACK_LEFT_BASE+20);
-   backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-40);
-}
+  
 
 void driveStop()
 {
@@ -242,50 +262,98 @@ void driveStop()
    backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-4);
 }
 
+void UpdateXY(float* X, float* Y ) {
+  Serial.readBytesUntil(',', xyPos, 15);
+  *X = atof(xyPos);
+  Serial.readBytesUntil('\n', xyPos, 15);
+  *Y = atof(xyPos);
+}
+
+void xyPID() {
+  float X, Y;
+  UpdateXY(&X, &Y);
+  double xErrorNow = X;
+  double yErrorNow = Y;
+  
+  xStabilize.errorCorrection(xErrorNow, yError, endTime-startTime);
+  yStabilize.errorCorrection(yErrorNow, xError, endTime-startTime);
+  
+  if(xErrorNow > 0)
+  {
+    Correction1 = xStabilize.compute(xError = xErrorNow);
+    Correction2 = -Correction1;
+    Correction3 = xStabilize.compute(xError = xErrorNow);
+    Correction4 = -Correction3;
+  }
+  
+  else if (xErrorNow < 0)
+  {
+    Correction1 = -xStabilize.compute(xError = xErrorNow);
+    Correction2 = -Correction1;
+    Correction3 = -xStabilize.compute(xError = xErrorNow);
+    Correction4 = -Correction3;
+  }
+  
+   if(yErrorNow > 0)
+ {
+   Correction1 = yStabilize.compute(yError = yErrorNow);
+   Correction2 = -Correction1;
+   Correction3 = yStabilize.compute(yError = yErrorNow);
+   Correction4 = -Correction3;
+ }
+ 
+ else if (yErrorNow < 0)
+ {
+   Correction1 = -yStabilize.compute(yError = yErrorNow);
+   Correction2 = -Correction1;
+   Correction3 = -yStabilize.compute(yError = yErrorNow);
+   Correction4 = -Correction3;
+ }
+}
+
+void driveForward()
+{
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-30+Correction1);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+13+Correction2);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+12+Correction3);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-29+Correction4);
+}
+
 void driveReverse()
 {
-  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+30);
-  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-40);
-  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-42);
-  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+30);
-}
-
-void driveLeftBottom()
-{
-  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-28);
-  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28);
-  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+18);
-  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+15);
-}
-
-void driveLeftTop()
-{
-  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-23);
-  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-40);
-  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+11);
-  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+27);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+18+Correction1);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28+Correction2);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-30+Correction3);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+17+Correction4);
 }
 
 void driveRight()
 {
-  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+32);
-  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+31);
-  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-38);
-  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-37);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+32+Correction1);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+31+Correction2);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-38+Correction3);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-37+Correction4);
 }
 
-void forwardSlow()
+void driveLeftBottom()
 {
-   frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-30);
-   frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE+13);
-   backleftMotor.writeMicroseconds(BACK_LEFT_BASE+12);
-   backrightMotor.writeMicroseconds(BACK_RIGHT_BASE-29);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-28+Correction1);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28+Correction2);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+18+Correction3);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+15+Correction4);
 }
 
-void reverseSlow()
+void driveLeftTop()
 {
-  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE+18);
-  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-28);
-  backleftMotor.writeMicroseconds(BACK_LEFT_BASE-30);
-  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+17);
+  frontrightMotor.writeMicroseconds(FRONT_RIGHT_BASE-23+Correction1);
+  frontleftMotor.writeMicroseconds(FRONT_LEFT_BASE-40+Correction2);
+  backleftMotor.writeMicroseconds(BACK_LEFT_BASE+11+Correction3);
+  backrightMotor.writeMicroseconds(BACK_RIGHT_BASE+27+Correction4);
+}
+
+void ResetCorrection(){
+  Correction1=0;
+  Correction2=0;
+  Correction3=0;
+  Correction4=0;
 }

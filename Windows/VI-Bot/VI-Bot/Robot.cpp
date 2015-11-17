@@ -8,22 +8,39 @@
 
 using namespace cv;
 
-int traversePart(System::String^ tivaCOM, vector<holeInfo> holeList)
+int traversePart(wchar_t* tivaCOM, vector<holeInfo> holeList)
 {
 	CLEyeCameraInstance eyeCamera;
-	SerialPort ^ serial = gcnew SerialPort(tivaCOM, BAUD_RATE);
-	serial->ReadTimeout = 150;
+	HANDLE serial = CreateFile(tivaCOM, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	DCB commConfig;
+	COMMTIMEOUTS commTO;
 
-	serial->Open();
-
-	if (!serial->IsOpen)
+	if (GetCommState(serial, &commConfig) == 0)
 		return -1;
+
+	if (commConfig.BaudRate != BAUD_RATE)
+	{
+		commConfig.BaudRate = BAUD_RATE;
+		
+		if (SetCommState(serial, &commConfig) == 0)
+			return -1;
+	}
+
+	commTO.ReadIntervalTimeout = 3;
+	commTO.ReadTotalTimeoutMultiplier = 3;
+	commTO.ReadTotalTimeoutConstant = 2;
+	commTO.WriteTotalTimeoutMultiplier = 3;
+	commTO.WriteTotalTimeoutConstant = 2;
+	SetCommTimeouts(serial, &commTO);
 
 	eyeCamera = StartCam(60, CLEYE_VGA);
 
 	//orientCamera(eyeCamera);
 
 	trackTraversal(eyeCamera, serial);
+
+	CloseHandle(serial);
+	StopCam(eyeCamera);
 
 	return 0;
 }
@@ -36,11 +53,22 @@ int orientCamera(CLEyeCameraInstance eyeCamera)
 	vector<Vec3f> circles;
 	float error = 2.0;
 	int Height, Width;
+	HANDLE _hThread;
+	bool done = false;
 
 	CLEyeCameraGetFrameDimensions(eyeCamera, Width, Height);
 	frame = Mat(Height, Width, CV_8UC4);
 
-	while (error > CALIBRATION_VALUE)
+	while (waitKey(20) == -1)
+	{
+		//Get Frame From Camera
+		CLEyeCameraGetFrame(eyeCamera, frame.data);
+		imshow("Video Capture", frame);
+	}
+
+	destroyWindow("Video Capture");
+	
+	while (!done)
 	{
 		CLEyeCameraGetFrame(eyeCamera, frame.data);
 		cvtColor(frame, frameGray, CV_BGR2GRAY);
@@ -64,28 +92,21 @@ int orientCamera(CLEyeCameraInstance eyeCamera)
 			continue;
 		}
 
+		done = true;
+
 		Point circle1(cvRound(circles[0][0]), cvRound(circles[0][1]));
 		Point circle2(cvRound(circles[1][0]), cvRound(circles[1][1]));
 
-		error = circle1.y - circle2.y;
-
-		if (error > CALIBRATION_VALUE)
-		{
-			line(frame, circle1, circle2, Scalar(0, 0, 255), 4);
-		}
-		else
-		{
-			line(frame, circle1, circle2, Scalar(0, 255, 0), 4);
-		}
+	    
 
 		imshow("Calibration", frame);
 		waitKey(100);
 	}
-
+	
 	return 0;
 }
 
-int trackTraversal(CLEyeCameraInstance eyeCamera, SerialPort^ serial)
+int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial)
 {
 	int Width, Height;
 	int minHessian = 13000;
@@ -104,8 +125,10 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, SerialPort^ serial)
 	Mat affine;
 	ocl::oclMat img1, img2;
 	int nullCount = 0;
-	System::String^ out;
     char tempBuffer[50];
+	DWORD length;
+    DWORD lpErr;
+	COMSTAT lpStat;
 
 	gaussSize.width = 3;
 	gaussSize.height = 3;
@@ -183,33 +206,37 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, SerialPort^ serial)
 		}
 
 		sprintf(tempBuffer, "%.2lf,%.2lf\n", deltaX, deltaY);
-		out = gcnew System::String(tempBuffer);
-		serial->Write(out);
+		deltaX = deltaX = 0;
+		
+		if (WriteFile(serial, tempBuffer, strlen(tempBuffer), &length, NULL) == 0)      
+		{
+			OutputDebugString(L"Failed to write to serial.");
+		}
 
 		imshow("feed gray", frameGray);
 
 		vector<Point2f>().swap(affinePts[0]);
 		vector<Point2f>().swap(affinePts[1]);
 
-		if (serial->BytesToRead > 0)
+		ClearCommError(serial, &lpErr, &lpStat);
+		
+		if (lpStat.cbInQue > 0)
 		{
-			try
+			if (ReadFile(serial, tempBuffer, 5, &length, NULL) != 0)
 			{
-			   out = serial->ReadLine();
+				tempBuffer[5] = '\0';
+				if (strcmp("done\n", tempBuffer) == 0)
+				{
+					//discovered we're finished
+					break;
+				}
 			}
-			catch (System::Exception ^e)
-			{
-				//meh
-			}
-		}
-
-		if (out->Contains("done"))
-		{
-			break;
 		}
 
 		waitKey(1);
 	}
+
+	destroyWindow("feed gray");
 
 	return 0;
 }

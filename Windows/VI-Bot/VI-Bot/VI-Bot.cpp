@@ -5,11 +5,6 @@
 
 #define MAX_LOADSTRING 100
 
-ref class ManagedGlobals {
-public:
-	static array<String^>^ serialPorts = nullptr;          // COM port names
-};
-
 // Global Variables:
 HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
@@ -18,6 +13,8 @@ HWND listView;
 vector<holeInfo> holeList;
 int serialIdx = 0;
 CLEyeCameraInstance eyeCam;
+wchar_t **availablePorts = NULL;
+int openPorts = 0;
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -64,6 +61,13 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 		}
 	}
 
+	for (int i = 0; i < openPorts; i++)
+	{
+		free(availablePorts[i]);
+	}
+
+	free(availablePorts);
+
 	return (int) msg.wParam;
 }
 
@@ -109,8 +113,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
    HWND hWnd;
    HMENU hMenu;
-   msclr::interop::marshal_context mcontext;
-   int count = 0;
    LVCOLUMN lvc;
    WCHAR colText[256];
 
@@ -128,20 +130,11 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    hMenu = GetSubMenu(hMenu, 1);
    hMenu = GetSubMenu(hMenu, 0);
 
-   try
-   {
-	   // Get a list of serial port names.
-	   ManagedGlobals::serialPorts = SerialPort::GetPortNames();
-   }
-   catch (Win32Exception^ ex)
-   {
-	   Console::WriteLine(ex->Message);
-   }
+   loadCOMPorts();
 
-   for each(String^ port in ManagedGlobals::serialPorts)
+   for (int i = 0; i < openPorts; i++)
    {
-	   AppendMenu(hMenu, MF_UNCHECKED, COM_OPT1+count, mcontext.marshal_as<LPCWSTR>(port));
-	   count++;
+	   AppendMenu(hMenu, MF_UNCHECKED, COM_OPT1 + i, availablePorts[i]);
    }
 
    //select the first by default
@@ -282,13 +275,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		case BTN_RUN:
 		{
-			if (ManagedGlobals::serialPorts->Length == 0)
+			if (availablePorts == NULL)
 			{
-				MessageBox(hWnd, L"No serial connection to robot. Check your cables.", L"COM Error", MB_ICONERROR);
-				break;
+				loadCOMPorts();
+
+				if (availablePorts == NULL)
+				{
+					MessageBox(hWnd, L"No serial connection to robot. Check your cables.", L"COM Error", MB_ICONERROR);
+					break;
+				}
 			}
 
-			int ret = traversePart((String^)ManagedGlobals::serialPorts->GetValue(serialIdx), holeList);
+			int ret = traversePart(availablePorts[serialIdx], holeList);
 		    
 			if (ret == -1)
 			{
@@ -332,4 +330,37 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	}
 	return (INT_PTR)FALSE;
+}
+
+void loadCOMPorts()
+{
+	msclr::interop::marshal_context mcontext;
+	int count = 0;
+	array<String^>^ serialPorts = nullptr;
+	LPCWSTR tempString;
+
+	try
+	{
+		// Get a list of serial port names.
+		serialPorts = SerialPort::GetPortNames();
+	}
+	catch (Win32Exception^ ex)
+	{
+		Console::WriteLine(ex->Message);
+	}
+
+	if (serialPorts->Length > 0)
+	{
+		availablePorts = (wchar_t **)malloc(serialPorts->Length*sizeof(wchar_t *));
+		openPorts = serialPorts->Length;
+	}
+
+	for each(String^ port in serialPorts)
+	{
+		//append to menu and store in wchar buffer
+		tempString = mcontext.marshal_as<LPCWSTR>(port);
+		availablePorts[count] = (wchar_t *)malloc((wcslen(tempString) + 1)*sizeof(wchar_t));
+		wcscpy(availablePorts[count], tempString);
+		count++;
+	}
 }
