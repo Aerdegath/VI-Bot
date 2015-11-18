@@ -217,9 +217,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	int wmId, wmEvent;
 	PAINTSTRUCT ps;
 	HDC hdc;
-	MENUITEMINFO mInfo;
 	HMENU hMenu = GetMenu(hWnd);
-	String^ name;
 	OPENFILENAME fileStruct;
 	wchar_t	filename[MAX_FILENAME_CHARS];
 
