@@ -1,18 +1,25 @@
 #include "stdafx.h"
 #include "VI-Bot.h"
 
+#define LOG_PATH "C:\\Users\\Scott\\Desktop\\VI-Bot.txt"
+
 #define BAUD_RATE 38400
 #define CALIBRATION_VALUE 0.1
 #define CALIB_ITERATIONS 200
 #define THRESH_X 1
 #define THRESH_Y 1
+#define MAX_X 15
+#define MAX_Y 15
+#define MAX_DIAM 10
 
 //conversion for affine translations (compensation for scaling error, root cause unknown)
-#define AFFINE_PIX2MM(X) ((double) X * (100.0/258.0))
+//#define AFFINE_PIX2MM(X) ((double) X * (100.0/258.0))
+#define AFFINE_PIX2MM(X) ((double)X * (100.0 / 315.0))
 //conversion for objects in image
 #define PIX2MM(X) ((double) X * 0.1078125)
-//fudge factor for angle also try 2.878464819
-#define ANGLEERR(X) (X*2.878464819)
+//fudge factor for angle also try 2.87846481
+//#define ANGLEERR(X) (X*0.001111133)
+#define ANGLEERR(X) (X*0)
 
 using namespace cv;
 
@@ -24,6 +31,9 @@ int traversePart(wchar_t* tivaCOM, vector<holeInfo> holeList)
 	COMMTIMEOUTS commTO;
 	double xPos, yPos;
 	Vec2d heading;
+	vector<detectedHole> foundHoles;
+	int errorsFound = 0;
+
 
 	if (GetCommState(serial, &commConfig) == 0)
 		return -1;
@@ -47,7 +57,9 @@ int traversePart(wchar_t* tivaCOM, vector<holeInfo> holeList)
 	
 	orientCamera(eyeCamera, &xPos, &yPos, &heading);
 
-	trackTraversal(eyeCamera, serial, xPos, yPos, heading);
+	foundHoles = trackTraversal(eyeCamera, serial, xPos, yPos, heading);
+
+//	errorsFound = logHoles(foundHoles, holeList, xPos, yPos);
 
 	CloseHandle(serial);
 	StopCam(eyeCamera);
@@ -127,14 +139,14 @@ int orientCamera(CLEyeCameraInstance eyeCamera, double *xPos, double *yPos, Vec2
 	if (circle1.x > circle2.x)
 	{
 		angle = (atan2(circle1.y - circle2.y, circle1.x - circle2.x));
-		*xPos = PIX2MM(circle1.x);
-		*yPos = PIX2MM(circle1.y);
+		*xPos = PIX2MM(circle1.y);
+		*yPos = PIX2MM(circle1.x);
 	}
 	else
 	{
 		angle = (atan2(circle2.y - circle1.y, circle2.x - circle1.x));
-		*xPos = PIX2MM(circle2.x);
-		*yPos = PIX2MM(circle2.y);
+		*xPos = PIX2MM(circle2.y);
+		*yPos = PIX2MM(circle2.x);
 	}
 
 	circle(frame, circle2, 1, Scalar(0, 0, 255), 2);
@@ -155,7 +167,7 @@ int orientCamera(CLEyeCameraInstance eyeCamera, double *xPos, double *yPos, Vec2
 	return 0;
 }
 
-int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, double yPos, Vec2d heading)
+vector<detectedHole> trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, double yPos, Vec2d xheading)
 {
 	int Width, Height;
 	int minHessian = 13000;
@@ -182,6 +194,12 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 	std::vector<Vec3f> circles;
 	double vectorNorm;
 	double theta;
+	Vec2d yheading;
+	vector<detectedHole> foundHoles;
+	detectedHole thisHole;
+	int foundIdx = 0;
+	double initialX = xPos;
+	double initialY = yPos;
 
 	gaussSize.width = 3;
 	gaussSize.height = 3;
@@ -217,7 +235,7 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 		cvtColor(frame, frameGray, CV_BGR2GRAY);
 		medianBlur(frameGray, frameGray, 5);
 		GaussianBlur(frameGray, frameGray, gaussSize, gaussSize.width, gaussSize.height);
-		HoughCircles(frameGray, circles, CV_HOUGH_GRADIENT, 1, frameGray.rows / 8, 100, 25, 0, 0);
+		HoughCircles(frameGray, circles, CV_HOUGH_GRADIENT, 1, frameGray.rows / 8, 100, 35, 0, 0);
 		clahe->apply(frameGray, frameGray);
 		
 		img2 = frameGray;
@@ -227,7 +245,7 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 		matcher.match(descriptorsPrev, descriptorsFrame, matches);
 
 		std::sort(matches.begin(), matches.end(), minMatch);
-
+		
 		for (size_t i = 0; i < circles.size(); i++)
 		{
 			Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
@@ -240,6 +258,13 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 
 			sprintf(printBuffer, "X: %.2lf Y: %.2lf Size: %.2lf", xPos - PIX2MM(center.y), yPos - PIX2MM(center.x), PIX2MM(radius));
 			putText(frame, printBuffer, Point(center.x - 30, center.y + radius + 5), FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(0, 255, 0));
+
+			thisHole.xPos = xPos - PIX2MM(center.y);
+			thisHole.yPos = yPos - PIX2MM(center.x);
+			thisHole.diameter = PIX2MM(radius * 2);
+			thisHole.samples = 1;
+
+			foundHoles.push_back(thisHole);
 		}
 
 		for (int i = 0; i < floor(matches.size()*0.20); i++)
@@ -268,12 +293,15 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 
 		//multiply the heading vector by the affine rotation matrix
 		theta = ANGLEERR((atan2(affine.at<double>(1, 0), affine.at<double>(0, 0))));
-		rotateVector(&heading, theta);
+		rotateVector(&xheading, theta);
 
-		vectorNorm = sqrt(pow(heading[0], 2) + pow(heading[1], 2));
+		vectorNorm = sqrt(pow(xheading[0], 2) + pow(xheading[1], 2));
 
-		heading[0] = heading[0] / vectorNorm;
-		heading[1] = heading[1] / vectorNorm;
+		xheading[0] /= vectorNorm;
+
+		yheading[0] = xheading[0];
+		yheading[1] = xheading[1];
+		rotateVector(&yheading, M_PI/2);
 
 		if (abs(affine.at<double>(0, 2)) > THRESH_X)
 		{
@@ -287,15 +315,16 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 			deltaY = affine.at<double>(1, 2);
 		}
 
-		xPos += AFFINE_PIX2MM(deltaX * heading[0] + deltaY * heading[0]);
-		yPos += AFFINE_PIX2MM(deltaY * heading[1] + deltaX * heading[1]);
+		//deltaY/X is delta with respect to the image; flipped in real-world system
+		xPos += AFFINE_PIX2MM(deltaY) * xheading[0] + AFFINE_PIX2MM(deltaX) * yheading[0];
+		yPos += AFFINE_PIX2MM(deltaX) * yheading[1] + AFFINE_PIX2MM(deltaY) * xheading[1];
 
 		sprintf(serialBuffer, "%.2lf,%.2lf\n", deltaX, deltaY);
-		deltaX = deltaY = 0;
 
-		sprintf(printBuffer, "dX: %.2lf dY: %.2lf heading: (%.2lf, %.2lf) pos: %.2lf, %.2lf", 
-			     deltaX, deltaY, heading[0], heading[1], xPos, yPos);
-		putText(frame, printBuffer, cvPoint(30, 30), FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(80, 255, 80));
+		sprintf(printBuffer, "%.2lf, %.2lf pos1: %.2lf, %.2lf", 
+			deltaX, deltaY, xPos, yPos);
+		deltaX = deltaY = 0;
+		putText(frame, printBuffer, cvPoint(0, 30), FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(80, 255, 80));
 		
 		if (WriteFile(serial, serialBuffer, strlen(serialBuffer), &length, NULL) == 0)
 		{
@@ -327,11 +356,114 @@ int trackTraversal(CLEyeCameraInstance eyeCamera, HANDLE serial, double xPos, do
 
 	destroyWindow("Video Feed");
 
-	return 0;
+	return foundHoles;
 }
 
 void rotateVector(Vec2d *vector, double theta)
 {
-	(*vector)[0] = (*vector)[0] * cos(theta) - (*vector)[1] * sin(theta);
-	(*vector)[1] = (*vector)[0] * sin(theta) + (*vector)[1] * cos(theta);
+	double newX, newY;
+	newX = (*vector)[0] * cos(theta) - (*vector)[1] * sin(theta);
+	newY = (*vector)[0] * sin(theta) + (*vector)[1] * cos(theta);
+
+	(*vector)[0] = newX;
+	(*vector)[1] = newY;
+}
+
+//this is the WORST way to do this
+//search holeList for a hole within range of the current one, return index
+int holeExists(detectedHole hole, vector<detectedHole> holeList)
+{
+	for (int i = 0; i < holeList.size(); i++)
+	{
+		if ((abs(hole.xPos - holeList[i].xPos) < MAX_X) &&
+			(abs(hole.yPos - holeList[i].yPos) < MAX_Y) &&
+			abs(hole.diameter - holeList[i].diameter) < MAX_DIAM)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+//again no time do the stupid way
+int logHoles(vector<detectedHole> foundHoles, vector<holeInfo> holeList, double initialX, double initialY)
+{
+	int i, j;
+	FILE *logFile;
+	int foundIdx;
+
+	logFile = fopen(LOG_PATH, "w");
+
+	//consolidate holes
+	for (i = 0; i < foundHoles.size(); i++)
+	{
+		//skip the fiducial markers
+		if (foundHoles[i].xPos > initialX || foundHoles[i].yPos > initialY)
+		{
+			foundHoles.erase(foundHoles.begin() + i);
+		}
+
+	    foundIdx = holeExists(foundHoles[i], foundHoles);
+
+	    if (foundIdx != -1)
+	    {
+			//combine the two
+			foundHoles[foundIdx].samples++;
+			foundHoles[foundIdx].diameter += foundHoles[i].diameter;
+			foundHoles[foundIdx].diameter /= foundHoles[foundIdx].samples;
+			foundHoles[foundIdx].xPos += foundHoles[i].xPos;
+			foundHoles[foundIdx].xPos /= foundHoles[foundIdx].samples;
+			foundHoles[foundIdx].yPos += foundHoles[i].yPos;
+			foundHoles[foundIdx].yPos /= foundHoles[foundIdx].samples;
+
+			foundHoles.erase(foundHoles.begin() + i);
+		}
+	}
+	
+
+	fprintf(logFile, "Detected Holes (all units mm):\n\n");
+
+	for (i = 0; i < foundHoles.size(); i++)
+	{
+		fprintf(logFile, "%d\tX: %.3lf\tY: %.3lf\tDiameter: %.3lf\n", i + 1,
+			     foundHoles[i].xPos, foundHoles[i].yPos, foundHoles[i].diameter);
+
+	}
+
+	for (i = 0; i < foundHoles.size(); i++)
+	{
+		for (j = 0; j < holeList.size(); j++)
+		{
+			if ((abs(foundHoles[i].xPos - holeList[j].xPos) < MAX_X) &&
+				(abs(foundHoles[i].yPos - holeList[j].yPos) < MAX_Y) &&
+				abs(foundHoles[i].diameter - holeList[j].diameter) < MAX_DIAM)
+			{
+				//we have a match
+				foundHoles.erase(foundHoles.begin()+i);
+				break;
+			}
+		}
+	}
+
+	if (foundHoles.size() > 0)
+	{
+		fprintf(logFile, "\n\nThe following errors were detected:\n\n");
+		//only thing left don't have matches
+		for (i = 0; i < foundHoles.size(); i++)
+		{
+			fprintf(logFile, "%d\tX: %.3lf\tY: %.3lf\tDiameter: %.3lf\n", i + 1,
+				foundHoles[i].xPos, foundHoles[i].yPos, foundHoles[i].diameter);
+
+		}
+
+		fclose(logFile);
+
+		return 1;
+	}
+
+	fclose(logFile);
+
+	return 0;
+
 }

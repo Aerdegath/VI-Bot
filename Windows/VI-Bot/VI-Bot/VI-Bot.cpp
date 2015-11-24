@@ -290,6 +290,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				MessageBox(hWnd, L"Failed to open serial connection!", L"COM Error", MB_ICONERROR);
 			}
+			else if (ret == 1)
+			{
+				MessageBox(hWnd, L"Out of spec features detected. See log for details.", L"Part Error", MB_ICONERROR);
+			}
 			break;
 		}
 		default:
